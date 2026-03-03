@@ -87,6 +87,19 @@ has_claude() {
   command -v claude >/dev/null 2>&1
 }
 
+has_python() {
+  command -v python >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1
+}
+
+python_cmd() {
+  if command -v python >/dev/null 2>&1; then
+    printf '%s\n' "python"
+    return
+  fi
+
+  printf '%s\n' "python3"
+}
+
 limit_message_length() {
   local text="$1"
   local limit="${TELEGRAM_MAX_MESSAGE_LENGTH}"
@@ -158,7 +171,36 @@ extract_next_offset() {
 print_updates() {
   local response="$1"
 
-  if [[ "$RAW_OUTPUT" == "1" ]] || ! has_jq; then
+  if [[ "$RAW_OUTPUT" == "1" ]]; then
+    printf '%s\n' "$response"
+    return
+  fi
+
+  if has_python; then
+    printf '%s\n' "$response" | "$(python_cmd)" -c '
+import json
+import sys
+from datetime import datetime, timezone, timedelta
+
+response = json.load(sys.stdin)
+for item in response.get("result", []):
+    message = item.get("message")
+    if not message:
+        continue
+    dt = datetime.fromtimestamp(message["date"], tz=timezone.utc) + timedelta(hours=8)
+    sender = (
+        message.get("from", {}).get("username")
+        or message.get("from", {}).get("first_name")
+        or "unknown"
+    )
+    text = message.get("text") or message.get("caption") or "<non-text message>"
+    text = text.replace("\n", "\\n")
+    print(f"{dt:%Y-%m-%d %H:%M:%S} {sender}: {text}")
+'
+    return
+  fi
+
+  if ! has_jq; then
     printf '%s\n' "$response"
     return
   fi
@@ -236,9 +278,10 @@ send_message() {
   require_arg "$text" "message text"
   limited_text="$(limit_message_length "$text")"
 
-  response="$(api_post "sendMessage" \
+  # Read message text from stdin so curl preserves UTF-8 on Windows/Git Bash.
+  response="$(printf '%s' "$limited_text" | api_post "sendMessage" \
     --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
-    --data-urlencode "text=${limited_text}")"
+    --data-urlencode text@-)"
   print_send_response "$response"
 }
 
@@ -248,9 +291,9 @@ send_message_to_chat() {
   local limited_text=""
   limited_text="$(limit_message_length "$text")"
 
-  api_post "sendMessage" \
+  printf '%s' "$limited_text" | api_post "sendMessage" \
     --data-urlencode "chat_id=${chat_id}" \
-    --data-urlencode "text=${limited_text}" >/dev/null
+    --data-urlencode text@- >/dev/null
 }
 
 run_claude_prompt() {
@@ -368,7 +411,6 @@ auto_reply_to_updates() {
   local chat_id=""
   local sender=""
   local text=""
-  local preview=""
   local reply_text=""
 
   if ! has_jq; then
@@ -385,13 +427,7 @@ auto_reply_to_updates() {
       continue
     fi
 
-    preview="$(printf '%s' "$text" | cut -c1-10)"
-    if [[ "${#text}" -gt 10 ]]; then
-      reply_text="Rcvd msg from ${sender}: ${preview}..."
-    else
-      reply_text="Rcvd msg from ${sender}: ${preview}"
-    fi
-
+    reply_text="Rcvd msg from ${sender}"
     send_message_to_chat "$chat_id" "$reply_text"
   done < <(
     printf '%s\n' "$response" | jq -c '

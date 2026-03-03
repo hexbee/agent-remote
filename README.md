@@ -7,7 +7,7 @@
 - Sends plain text messages to a Telegram chat
 - Receives Telegram updates through long polling
 - Watches new messages continuously
-- Auto-replies with a simple built-in echo mode
+- Auto-replies with a simple built-in acknowledgement mode
 - Auto-replies with Claude output
 - Responds to a heartbeat keyword without calling Claude
 
@@ -16,6 +16,7 @@
 - `bash`
 - `curl`
 - `jq` for formatted output and auto-reply modes
+- `python` or `python3` recommended for reliable formatted update output on Windows/Git Bash
 - `claude` CLI for Claude-backed commands
 - A Telegram bot token and target chat ID
 
@@ -88,8 +89,20 @@ User: ping
 Bot: pong
 ```
 
+## Auto Reply Mode
+
+`watch-reply` watches incoming text messages and sends a lightweight acknowledgement reply:
+
+```text
+Rcvd msg from <sender>
+```
+
+It does not echo the original message text back to Telegram. This avoids UTF-8 issues seen in some Windows/Git Bash setups when non-ASCII text is re-sent through shell argument encoding.
+
 ## Notes
 
 - Non-text messages are ignored in auto-reply modes
 - Long Claude responses are truncated before sending to Telegram
 - Terminal output shows both incoming messages and outgoing placeholder or Claude replies
+- On Windows/Git Bash, formatted incoming-message logs prefer `python` or `python3` over `jq` to avoid Chinese text garbling in the terminal
+- Telegram sends message text through stdin instead of shell arguments to avoid UTF-8 encoding errors with non-ASCII content
