@@ -9,7 +9,8 @@ class DummyConfig(object):
     raw_output = False
     heartbeat_keyword = "ping"
     heartbeat_response = "pong"
-    claude_pending_message = "Processing your request..."
+    claude_pending_message = "[CLAUDE CODE] Processing your request..."
+    codex_pending_message = "[CODEX CLI] Processing your request..."
     telegram_max_message_length = 3500
 
 
@@ -126,13 +127,76 @@ class GatewayApplicationTest(unittest.TestCase):
         self.assertEqual(
             channel.sent,
             [
-                ("2001", "Processing your request..."),
+                ("2001", "[CLAUDE CODE] Processing your request..."),
                 ("2001", "final reply"),
             ],
         )
         self.assertEqual(runner.prompts, ["hello"])
-        self.assertIn("[placeholder]: Processing your request...", stdout.getvalue())
+        self.assertIn(
+            "[placeholder]: [CLAUDE CODE] Processing your request...",
+            stdout.getvalue(),
+        )
         self.assertIn("[claude]: final reply", stdout.getvalue())
+
+    def test_codex_reply_handler_sends_placeholder_then_runner_output(self):
+        stdout = io.StringIO()
+        channel = FakeChannel()
+        claude_runner = FakeRunner("unused")
+        codex_runner = FakeRunner("codex reply")
+        app = GatewayApplication(
+            DummyConfig(),
+            channel,
+            claude_runner,
+            codex_runner=codex_runner,
+            stdout=stdout,
+        )
+        message = IncomingMessage(
+            update_id=3,
+            chat_id="2002",
+            sender="dave",
+            text="solve this",
+            is_bot=False,
+            timestamp=0,
+            raw={},
+            has_text_message=True,
+        )
+
+        app._codex_reply_handler(message)
+
+        self.assertEqual(
+            channel.sent,
+            [
+                ("2002", "[CODEX CLI] Processing your request..."),
+                ("2002", "codex reply"),
+            ],
+        )
+        self.assertEqual(codex_runner.prompts, ["solve this"])
+        self.assertEqual(claude_runner.prompts, [])
+        self.assertIn(
+            "[placeholder]: [CODEX CLI] Processing your request...",
+            stdout.getvalue(),
+        )
+        self.assertIn("[codex]: codex reply", stdout.getvalue())
+
+    def test_codex_send_uses_codex_runner_output(self):
+        stdout = io.StringIO()
+        channel = FakeChannel()
+        claude_runner = FakeRunner("unused")
+        codex_runner = FakeRunner("codex send reply")
+        app = GatewayApplication(
+            DummyConfig(),
+            channel,
+            claude_runner,
+            codex_runner=codex_runner,
+            stdout=stdout,
+        )
+
+        app.codex_send("describe the repo")
+
+        self.assertEqual(channel.sent, [("1000", "codex send reply")])
+        self.assertEqual(codex_runner.prompts, ["describe the repo"])
+        self.assertEqual(claude_runner.prompts, [])
+        self.assertIn("sent message_id=1 chat_id=1000 text=codex send reply", stdout.getvalue())
 
     def test_get_next_offset_returns_next_update_id(self):
         channel = FakeChannel()
@@ -218,8 +282,11 @@ class GatewayApplicationTest(unittest.TestCase):
 
         app._claude_reply_handler(message)
 
-        self.assertEqual(channel.sent, [("4000", "Processing your request...")])
-        self.assertIn("[placeholder]: Processing your request...", stdout.getvalue())
+        self.assertEqual(channel.sent, [("4000", "[CLAUDE CODE] Processing your request...")])
+        self.assertIn(
+            "[placeholder]: [CLAUDE CODE] Processing your request...",
+            stdout.getvalue(),
+        )
         self.assertIn("Failed to complete Claude reply 5: send failed for final reply", stderr.getvalue())
 
 

@@ -6,6 +6,30 @@ from gateway import cli
 
 
 class CliRunTest(unittest.TestCase):
+    def test_codex_send_dispatches_cleanly(self):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        application = mock.Mock()
+
+        with mock.patch("gateway.cli.AppConfig.load", return_value=object()):
+            with mock.patch("gateway.cli.create_channel", return_value=object()):
+                with mock.patch("gateway.cli.create_runner", return_value=object()):
+                    with mock.patch(
+                        "gateway.cli.GatewayApplication",
+                        return_value=application,
+                    ):
+                        exit_code = cli.run(
+                            argv=["app.py", "codex-send", "hello"],
+                            stdout=stdout,
+                            stderr=stderr,
+                            root_dir="/tmp",
+                        )
+
+        self.assertEqual(exit_code, 0)
+        application.codex_send.assert_called_once_with("hello")
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertEqual(stderr.getvalue(), "")
+
     def test_keyboard_interrupt_exits_cleanly(self):
         stdout = io.StringIO()
         stderr = io.StringIO()

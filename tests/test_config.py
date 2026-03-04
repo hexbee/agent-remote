@@ -31,13 +31,67 @@ class AppConfigTest(unittest.TestCase):
             self.assertEqual(config.telegram_bot_token, "env-token")
             self.assertEqual(config.telegram_chat_id, "12345")
             self.assertEqual(config.telegram_max_message_length, 42)
+            self.assertEqual(config.claude_executable, "claude")
             self.assertEqual(
                 config.claude_settings_path,
                 "/tmp/example-home/.claude/test.json",
             )
+            self.assertEqual(config.claude_workdir, temp_dir)
+            self.assertEqual(config.codex_executable, "codex")
+            self.assertEqual(config.codex_model, "gpt-5.3-codex")
+            self.assertEqual(config.codex_reasoning_effort, "high")
+            self.assertEqual(config.codex_workdir, temp_dir)
             self.assertEqual(config.claude_pending_message, "Please wait")
+            self.assertEqual(
+                config.codex_pending_message,
+                "[CODEX CLI] Processing your request...",
+            )
             self.assertEqual(config.heartbeat_keyword, "PING")
             self.assertEqual(config.heartbeat_response, "ENV-PONG")
+
+    def test_codex_env_overrides_defaults_and_resolves_relative_workdir(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            env_path = os.path.join(temp_dir, ".env")
+            with open(env_path, "w") as handle:
+                handle.write("TELEGRAM_BOT_TOKEN=file-token\n")
+                handle.write("TELEGRAM_CHAT_ID=12345\n")
+                handle.write("CODEX_EXECUTABLE=codex-beta\n")
+                handle.write("CODEX_MODEL=gpt-5.4-codex\n")
+                handle.write("CODEX_REASONING_EFFORT=medium\n")
+                handle.write("CODEX_WORKDIR=workspace\n")
+                handle.write('CODEX_PENDING_MESSAGE="[CODEX CLI] Working..."\n')
+
+            os.mkdir(os.path.join(temp_dir, "workspace"))
+
+            config = AppConfig.load(temp_dir, environ={"HOME": "/tmp/example-home"})
+
+            self.assertEqual(config.codex_executable, "codex-beta")
+            self.assertEqual(config.codex_model, "gpt-5.4-codex")
+            self.assertEqual(config.codex_reasoning_effort, "medium")
+            self.assertEqual(
+                config.codex_workdir,
+                os.path.join(temp_dir, "workspace"),
+            )
+            self.assertEqual(config.codex_pending_message, "[CODEX CLI] Working...")
+
+    def test_claude_env_overrides_defaults_and_resolves_relative_workdir(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            env_path = os.path.join(temp_dir, ".env")
+            with open(env_path, "w") as handle:
+                handle.write("TELEGRAM_BOT_TOKEN=file-token\n")
+                handle.write("TELEGRAM_CHAT_ID=12345\n")
+                handle.write("CLAUDE_EXECUTABLE=claude-beta\n")
+                handle.write("CLAUDE_WORKDIR=workspace\n")
+
+            os.mkdir(os.path.join(temp_dir, "workspace"))
+
+            config = AppConfig.load(temp_dir, environ={"HOME": "/tmp/example-home"})
+
+            self.assertEqual(config.claude_executable, "claude-beta")
+            self.assertEqual(
+                config.claude_workdir,
+                os.path.join(temp_dir, "workspace"),
+            )
 
     def test_invalid_integer_env_raises_config_error(self):
         with tempfile.TemporaryDirectory() as temp_dir:

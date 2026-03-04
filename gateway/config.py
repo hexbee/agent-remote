@@ -19,9 +19,16 @@ class AppConfig(object):
         "telegram_bot_token",
         "telegram_chat_id",
         "raw_output",
+        "claude_executable",
         "claude_settings_path",
+        "claude_workdir",
+        "codex_executable",
+        "codex_model",
+        "codex_reasoning_effort",
+        "codex_workdir",
         "telegram_max_message_length",
         "claude_pending_message",
+        "codex_pending_message",
         "heartbeat_keyword",
         "heartbeat_response",
         "environment",
@@ -34,9 +41,16 @@ class AppConfig(object):
         telegram_bot_token,
         telegram_chat_id,
         raw_output,
+        claude_executable,
         claude_settings_path,
+        claude_workdir,
+        codex_executable,
+        codex_model,
+        codex_reasoning_effort,
+        codex_workdir,
         telegram_max_message_length,
         claude_pending_message,
+        codex_pending_message,
         heartbeat_keyword,
         heartbeat_response,
         environment,
@@ -46,9 +60,16 @@ class AppConfig(object):
         self.telegram_bot_token = telegram_bot_token
         self.telegram_chat_id = telegram_chat_id
         self.raw_output = raw_output
+        self.claude_executable = claude_executable
         self.claude_settings_path = claude_settings_path
+        self.claude_workdir = claude_workdir
+        self.codex_executable = codex_executable
+        self.codex_model = codex_model
+        self.codex_reasoning_effort = codex_reasoning_effort
+        self.codex_workdir = codex_workdir
         self.telegram_max_message_length = telegram_max_message_length
         self.claude_pending_message = claude_pending_message
+        self.codex_pending_message = codex_pending_message
         self.heartbeat_keyword = heartbeat_keyword
         self.heartbeat_response = heartbeat_response
         self.environment = environment
@@ -77,6 +98,16 @@ class AppConfig(object):
             os.path.join("~", ".claude", "settings.json"),
         )
         claude_settings_path = os.path.expanduser(claude_settings_path)
+        claude_workdir = _parse_dir_env(
+            merged_environment,
+            "CLAUDE_WORKDIR",
+            root_dir,
+        )
+        codex_workdir = _parse_dir_env(
+            merged_environment,
+            "CODEX_WORKDIR",
+            root_dir,
+        )
 
         telegram_max_message_length = _parse_int_env(
             merged_environment,
@@ -90,11 +121,24 @@ class AppConfig(object):
             telegram_bot_token=telegram_bot_token,
             telegram_chat_id=telegram_chat_id,
             raw_output=merged_environment.get("RAW_OUTPUT", "0") == "1",
+            claude_executable=merged_environment.get("CLAUDE_EXECUTABLE", "claude"),
             claude_settings_path=claude_settings_path,
+            claude_workdir=claude_workdir,
+            codex_executable=merged_environment.get("CODEX_EXECUTABLE", "codex"),
+            codex_model=merged_environment.get("CODEX_MODEL", "gpt-5.3-codex"),
+            codex_reasoning_effort=merged_environment.get(
+                "CODEX_REASONING_EFFORT",
+                "high",
+            ),
+            codex_workdir=codex_workdir,
             telegram_max_message_length=telegram_max_message_length,
             claude_pending_message=merged_environment.get(
                 "CLAUDE_PENDING_MESSAGE",
-                "Processing your request...",
+                "[CLAUDE CODE] Processing your request...",
+            ),
+            codex_pending_message=merged_environment.get(
+                "CODEX_PENDING_MESSAGE",
+                "[CODEX CLI] Processing your request...",
             ),
             heartbeat_keyword=merged_environment.get("HEARTBEAT_KEYWORD", "ping"),
             heartbeat_response=merged_environment.get("HEARTBEAT_RESPONSE", "pong"),
@@ -259,3 +303,14 @@ def _parse_int_env(environment, key, default):
         return int(raw_value)
     except ValueError:
         raise ConfigError("Invalid {}: {}".format(key, raw_value))
+
+
+def _parse_dir_env(environment, key, default):
+    raw_value = environment.get(key, "")
+    if raw_value == "":
+        return default
+
+    resolved = os.path.expanduser(raw_value)
+    if not os.path.isabs(resolved):
+        resolved = os.path.join(default, resolved)
+    return os.path.abspath(resolved)

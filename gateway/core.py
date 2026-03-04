@@ -13,10 +13,20 @@ from gateway.formatting import (
 
 
 class GatewayApplication(object):
-    def __init__(self, config, channel, runner, stdout=None, stderr=None, sleeper=None):
+    def __init__(
+        self,
+        config,
+        channel,
+        runner,
+        codex_runner=None,
+        stdout=None,
+        stderr=None,
+        sleeper=None,
+    ):
         self.config = config
         self.channel = channel
         self.runner = runner
+        self.codex_runner = codex_runner or runner
         self.stdout = stdout or sys.stdout
         self.stderr = stderr or sys.stderr
         self.sleeper = sleeper or time.sleep
@@ -31,6 +41,14 @@ class GatewayApplication(object):
     def claude_send(self, prompt):
         self._require_arg(prompt, "prompt")
         reply = self.runner.run(prompt)
+        result = self.channel.send_text(self.channel.default_chat_id, reply)
+        self._write_output(
+            result.raw_text if self.config.raw_output else format_send_result(result)
+        )
+
+    def codex_send(self, prompt):
+        self._require_arg(prompt, "prompt")
+        reply = self.codex_runner.run(prompt)
         result = self.channel.send_text(self.channel.default_chat_id, reply)
         self._write_output(
             result.raw_text if self.config.raw_output else format_send_result(result)
@@ -54,6 +72,12 @@ class GatewayApplication(object):
         self._watch_loop(
             initial_offset=self._get_next_offset(),
             reply_handler=self._claude_reply_handler,
+        )
+
+    def watch_codex_reply(self):
+        self._watch_loop(
+            initial_offset=self._get_next_offset(),
+            reply_handler=self._codex_reply_handler,
         )
 
     def webhook_info(self):
@@ -113,6 +137,31 @@ class GatewayApplication(object):
         )
 
     def _claude_reply_handler(self, message):
+        self._runner_reply_handler(
+            message=message,
+            runner=self.runner,
+            pending_message=self.config.claude_pending_message,
+            result_kind="claude",
+            failure_prefix="Failed to complete Claude reply",
+        )
+
+    def _codex_reply_handler(self, message):
+        self._runner_reply_handler(
+            message=message,
+            runner=self.codex_runner,
+            pending_message=self.config.codex_pending_message,
+            result_kind="codex",
+            failure_prefix="Failed to complete Codex reply",
+        )
+
+    def _runner_reply_handler(
+        self,
+        message,
+        runner,
+        pending_message,
+        result_kind,
+        failure_prefix,
+    ):
         if message.is_bot or not message.has_text_message or not message.chat_id:
             return
 
@@ -128,23 +177,23 @@ class GatewayApplication(object):
             )
             return
 
-        self.channel.send_text(message.chat_id, self.config.claude_pending_message)
+        self.channel.send_text(message.chat_id, pending_message)
         self._log_sent_message(
             message.chat_id,
             message.sender,
             "placeholder",
-            self.config.claude_pending_message,
+            pending_message,
         )
 
         try:
-            reply_text = self.runner.run(message.text)
+            reply_text = runner.run(message.text)
             self.channel.send_text(message.chat_id, reply_text)
         except Exception as error:
             self._write_error(
                 self._format_message_error(
                     message,
                     error,
-                    prefix="Failed to complete Claude reply",
+                    prefix=failure_prefix,
                 )
             )
             return
@@ -152,7 +201,7 @@ class GatewayApplication(object):
         self._log_sent_message(
             message.chat_id,
             message.sender,
-            "claude",
+            result_kind,
             reply_text,
         )
 
