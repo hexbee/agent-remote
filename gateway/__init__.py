@@ -1,0 +1,2 @@
+"""Zero-dependency gateway package."""
+

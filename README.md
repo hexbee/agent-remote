@@ -2,6 +2,8 @@
 
 `telegram_claude_gateway.sh` is a small Telegram bot gateway for testing Telegram Bot API flows and forwarding incoming messages to Claude Code.
 
+The repository now also includes a zero-dependency Python entrypoint, `app.py`, for the same command set. The shell script remains unchanged.
+
 ## What It Does
 
 - Sends plain text messages to a Telegram chat
@@ -13,21 +15,25 @@
 
 ## Requirements
 
+- `python3.6+` for the new `app.py` entrypoint
 - `bash`
 - `curl`
-- `jq` for formatted output and auto-reply modes
-- `python` or `python3` recommended for reliable formatted update output on Windows/Git Bash
+- `jq` for the shell script formatted output and auto-reply modes
 - `claude` CLI for Claude-backed commands
 - A Telegram bot token and target chat ID
 
+If you use `app.py`, it relies only on the Python standard library plus the external `claude` CLI for Claude-backed commands.
+
 ## Environment
 
-Create a `.env` file next to the script:
+Copy `.env.example` to `.env`, or create a `.env` file next to the script:
 
 ```env
 TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
 ```
+
+If a value contains spaces, quote it so the legacy shell entrypoint can still `source` the file correctly.
 
 Supported environment variables:
 
@@ -38,6 +44,14 @@ Supported environment variables:
 - `HEARTBEAT_KEYWORD`: keyword that skips Claude and returns a direct response. Default: `ping`.
 - `HEARTBEAT_RESPONSE`: direct response for the heartbeat keyword. Default: `pong`.
 - `RAW_OUTPUT=1`: prints raw Telegram JSON instead of formatted output.
+
+`app.py` uses a dotenv-style parser, not shell `source` semantics:
+
+- environment variables from the parent process override values from `.env`
+- `${VAR}` and `${VAR:-default}` are supported
+- bare `$VAR` is treated literally
+- single-quoted values stay literal and are not interpolated
+- the file is configuration only; shell execution syntax is not supported
 
 ## Commands
 
@@ -51,6 +65,20 @@ Supported environment variables:
 ./telegram_claude_gateway.sh watch-claude-reply
 ./telegram_claude_gateway.sh webhook-info
 ./telegram_claude_gateway.sh delete-webhook
+```
+
+Python entrypoint with the same subcommands:
+
+```bash
+python3 app.py send "hello"
+python3 app.py claude-send "hello"
+python3 app.py receive
+python3 app.py watch
+python3 app.py watch-new
+python3 app.py watch-reply
+python3 app.py watch-claude-reply
+python3 app.py webhook-info
+python3 app.py delete-webhook
 ```
 
 ## Claude Mode
