@@ -18,7 +18,8 @@ class CodexCliRunner(object):
         self.workdir = workdir
 
     def run(self, prompt):
-        if not shutil.which(self.executable):
+        resolved_executable = shutil.which(self.executable)
+        if not resolved_executable:
             return "Codex CLI not found in PATH"
 
         if not os.path.isdir(self.workdir):
@@ -26,7 +27,7 @@ class CodexCliRunner(object):
 
         return_code, output = run_process(
             [
-                self.executable,
+                resolved_executable,
                 "exec",
                 "--dangerously-bypass-approvals-and-sandbox",
                 "--ephemeral",

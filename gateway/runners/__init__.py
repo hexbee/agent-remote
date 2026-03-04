@@ -8,6 +8,7 @@ def create_runner(name, config):
             executable=config.claude_executable,
             settings_path=config.claude_settings_path,
             workdir=config.claude_workdir,
+            no_session_persistence=config.claude_no_session_persistence,
         )
 
     if name == "codex_cli":

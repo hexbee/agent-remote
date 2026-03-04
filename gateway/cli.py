@@ -46,6 +46,9 @@ Environment:
   CLAUDE_SETTINGS_PATH       Claude settings path (default: ~/.claude/settings.json)
   CLAUDE_WORKDIR             Claude working root for cwd and --add-dir
                              (default: repository root)
+  CLAUDE_NO_SESSION_PERSISTENCE
+                             Set to 1 to append --no-session-persistence
+                             (default: 0)
   CODEX_EXECUTABLE           Codex CLI executable name (default: codex)
   CODEX_MODEL                Codex model name (default: gpt-5.3-codex)
   CODEX_REASONING_EFFORT     Codex reasoning effort for model config
@@ -54,6 +57,8 @@ Environment:
                              (default: repository root)
   TELEGRAM_MAX_MESSAGE_LENGTH
                              Max Telegram message length before truncation (default: 3500)
+  WATCH_POLL_TIMEOUT         Telegram getUpdates long-poll seconds for watch commands
+                             Lower values make Ctrl+C more responsive (default: 10)
   CLAUDE_PENDING_MESSAGE     Placeholder reply before Claude finishes
                              (default: [CLAUDE CODE] Processing your request...)
   CODEX_PENDING_MESSAGE      Placeholder reply before Codex finishes

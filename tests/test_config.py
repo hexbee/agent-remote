@@ -31,12 +31,14 @@ class AppConfigTest(unittest.TestCase):
             self.assertEqual(config.telegram_bot_token, "env-token")
             self.assertEqual(config.telegram_chat_id, "12345")
             self.assertEqual(config.telegram_max_message_length, 42)
+            self.assertEqual(config.watch_poll_timeout, 10)
             self.assertEqual(config.claude_executable, "claude")
             self.assertEqual(
                 config.claude_settings_path,
                 "/tmp/example-home/.claude/test.json",
             )
             self.assertEqual(config.claude_workdir, temp_dir)
+            self.assertFalse(config.claude_no_session_persistence)
             self.assertEqual(config.codex_executable, "codex")
             self.assertEqual(config.codex_model, "gpt-5.3-codex")
             self.assertEqual(config.codex_reasoning_effort, "high")
@@ -59,6 +61,7 @@ class AppConfigTest(unittest.TestCase):
                 handle.write("CODEX_MODEL=gpt-5.4-codex\n")
                 handle.write("CODEX_REASONING_EFFORT=medium\n")
                 handle.write("CODEX_WORKDIR=workspace\n")
+                handle.write("WATCH_POLL_TIMEOUT=2\n")
                 handle.write('CODEX_PENDING_MESSAGE="[CODEX CLI] Working..."\n')
 
             os.mkdir(os.path.join(temp_dir, "workspace"))
@@ -72,6 +75,7 @@ class AppConfigTest(unittest.TestCase):
                 config.codex_workdir,
                 os.path.join(temp_dir, "workspace"),
             )
+            self.assertEqual(config.watch_poll_timeout, 2)
             self.assertEqual(config.codex_pending_message, "[CODEX CLI] Working...")
 
     def test_claude_env_overrides_defaults_and_resolves_relative_workdir(self):
@@ -82,6 +86,7 @@ class AppConfigTest(unittest.TestCase):
                 handle.write("TELEGRAM_CHAT_ID=12345\n")
                 handle.write("CLAUDE_EXECUTABLE=claude-beta\n")
                 handle.write("CLAUDE_WORKDIR=workspace\n")
+                handle.write("CLAUDE_NO_SESSION_PERSISTENCE=1\n")
 
             os.mkdir(os.path.join(temp_dir, "workspace"))
 
@@ -92,6 +97,18 @@ class AppConfigTest(unittest.TestCase):
                 config.claude_workdir,
                 os.path.join(temp_dir, "workspace"),
             )
+            self.assertTrue(config.claude_no_session_persistence)
+
+    def test_invalid_boolean_env_raises_config_error(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            env_path = os.path.join(temp_dir, ".env")
+            with open(env_path, "w") as handle:
+                handle.write("TELEGRAM_BOT_TOKEN=file-token\n")
+                handle.write("TELEGRAM_CHAT_ID=12345\n")
+                handle.write("CLAUDE_NO_SESSION_PERSISTENCE=maybe\n")
+
+            with self.assertRaises(ConfigError):
+                AppConfig.load(temp_dir, environ={"HOME": "/tmp/example-home"})
 
     def test_invalid_integer_env_raises_config_error(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -100,6 +117,17 @@ class AppConfigTest(unittest.TestCase):
                 handle.write("TELEGRAM_BOT_TOKEN=file-token\n")
                 handle.write("TELEGRAM_CHAT_ID=12345\n")
                 handle.write("TELEGRAM_MAX_MESSAGE_LENGTH=oops\n")
+
+            with self.assertRaises(ConfigError):
+                AppConfig.load(temp_dir, environ={"HOME": "/tmp/example-home"})
+
+    def test_invalid_watch_poll_timeout_raises_config_error(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            env_path = os.path.join(temp_dir, ".env")
+            with open(env_path, "w") as handle:
+                handle.write("TELEGRAM_BOT_TOKEN=file-token\n")
+                handle.write("TELEGRAM_CHAT_ID=12345\n")
+                handle.write("WATCH_POLL_TIMEOUT=0\n")
 
             with self.assertRaises(ConfigError):
                 AppConfig.load(temp_dir, environ={"HOME": "/tmp/example-home"})

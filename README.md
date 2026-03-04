@@ -62,6 +62,7 @@ Shared Telegram and reply settings:
 - `TELEGRAM_BOT_TOKEN`: Telegram bot token. Required.
 - `TELEGRAM_CHAT_ID`: default Telegram chat ID. Required for send commands.
 - `TELEGRAM_MAX_MESSAGE_LENGTH`: max Telegram message length before truncation. Default: `3500`.
+- `WATCH_POLL_TIMEOUT`: Telegram `getUpdates` long-poll seconds for watch commands. Lower values make `Ctrl+C` more responsive on terminals that do not interrupt blocking network calls promptly. Default: `10`.
 - `HEARTBEAT_KEYWORD`: direct reply keyword that skips provider execution. Default: `ping`.
 - `HEARTBEAT_RESPONSE`: direct reply text for the heartbeat keyword. Default: `pong`.
 - `RAW_OUTPUT=1`: print raw Telegram JSON instead of formatted output.
@@ -71,6 +72,7 @@ Claude Code settings for `app.py`:
 - `CLAUDE_EXECUTABLE`: Claude executable name. Default: `claude`.
 - `CLAUDE_SETTINGS_PATH`: Claude settings file path. Default: `~/.claude/settings.json`.
 - `CLAUDE_WORKDIR`: Claude working root. `app.py` uses it as process `cwd` and also passes it via `--add-dir`. Default: repository root.
+- `CLAUDE_NO_SESSION_PERSISTENCE`: set to `1` to append `--no-session-persistence`. Default: `0`.
 - `CLAUDE_PENDING_MESSAGE`: placeholder reply sent before Claude finishes. Default: `[CLAUDE CODE] Processing your request...`.
 
 Codex CLI settings for `app.py`:
@@ -132,11 +134,16 @@ claude -p "$prompt" \
   --settings "$CLAUDE_SETTINGS_PATH" \
   --permission-mode bypassPermissions \
   --dangerously-skip-permissions \
-  --add-dir "$CLAUDE_WORKDIR" \
-  --no-session-persistence
+  --add-dir "$CLAUDE_WORKDIR"
 ```
 
 It also starts the Claude process with `cwd="$CLAUDE_WORKDIR"`.
+
+If `CLAUDE_NO_SESSION_PERSISTENCE=1`, `app.py` also appends:
+
+```bash
+--no-session-persistence
+```
 
 `watch-codex-reply` skips existing pending updates, then only handles new incoming text messages:
 

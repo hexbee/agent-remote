@@ -1,4 +1,10 @@
 import json
+import time
+
+try:
+    import socket
+except ImportError:  # pragma: no cover
+    socket = None  # type: ignore
 
 try:
     from urllib.error import HTTPError, URLError
@@ -14,20 +20,32 @@ from gateway.models import ApiResponse, IncomingMessage, SendResult, WebhookInfo
 
 
 class TelegramChannel(object):
-    def __init__(self, bot_token, default_chat_id, max_message_length):
+    def __init__(
+        self,
+        bot_token,
+        default_chat_id,
+        max_message_length,
+        send_retry_attempts=3,
+        send_retry_delay_seconds=1,
+        sleeper=None,
+    ):
         self.bot_token = bot_token
         self.default_chat_id = default_chat_id
         self.max_message_length = max_message_length
+        self.send_retry_attempts = max(int(send_retry_attempts), 1)
+        self.send_retry_delay_seconds = max(float(send_retry_delay_seconds), 0.0)
+        self.sleeper = sleeper or time.sleep
         self.api_base = "https://api.telegram.org/bot{}".format(bot_token)
 
     def send_text(self, chat_id, text):
         limited_text = limit_message_length(text, self.max_message_length)
-        response = self._post(
+        payload = {
+            "chat_id": chat_id,
+            "text": limited_text,
+        }
+        response = self._post_with_send_retries(
             "sendMessage",
-            {
-                "chat_id": chat_id,
-                "text": limited_text,
-            },
+            payload,
         )
         result = response.data.get("result") or {}
         chat = result.get("chat") or {}
@@ -99,6 +117,26 @@ class TelegramChannel(object):
             )
         return messages
 
+    def _post_with_send_retries(self, method, payload):
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                return self._post(method, payload)
+            except Exception as error:
+                if not self._is_retryable_send_error(error):
+                    raise
+                if attempt >= self.send_retry_attempts:
+                    raise ApiError(
+                        "Telegram {} failed after {} attempts: {}".format(
+                            method,
+                            self.send_retry_attempts,
+                            error,
+                        )
+                    )
+                if self.send_retry_delay_seconds > 0:
+                    self.sleeper(self.send_retry_delay_seconds)
+
     def _post(self, method, payload, request_timeout=30):
         data = urlencode(payload).encode("utf-8")
         request = Request(
@@ -127,3 +165,38 @@ class TelegramChannel(object):
 
         return ApiResponse(raw_text=raw_text, data=data)
 
+    def _is_retryable_send_error(self, error):
+        if isinstance(error, HTTPError):
+            return False
+
+        if socket is not None and isinstance(error, socket.timeout):
+            return True
+
+        if isinstance(error, URLError):
+            return True
+
+        if isinstance(error, ApiError):
+            lowered = str(error).lower()
+            return any(
+                fragment in lowered
+                for fragment in (
+                    "remote end closed connection without response",
+                    "timed out",
+                    "connection aborted",
+                    "connection reset",
+                    "temporarily unavailable",
+                    "connection refused",
+                )
+            )
+
+        return any(
+            fragment in str(error).lower()
+            for fragment in (
+                "remote end closed connection without response",
+                "timed out",
+                "connection aborted",
+                "connection reset",
+                "temporarily unavailable",
+                "connection refused",
+            )
+        )

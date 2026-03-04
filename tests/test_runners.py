@@ -10,6 +10,7 @@ class DummyConfig(object):
     claude_executable = "claude"
     claude_settings_path = "/tmp/settings.json"
     claude_workdir = "/tmp/claude-worktree"
+    claude_no_session_persistence = False
     codex_executable = "codex"
     codex_model = "gpt-5.3-codex"
     codex_reasoning_effort = "high"
@@ -25,6 +26,7 @@ class RunnerFactoryTest(unittest.TestCase):
         self.assertEqual(runner.executable, "claude")
         self.assertEqual(runner.settings_path, "/tmp/settings.json")
         self.assertEqual(runner.workdir, "/tmp/claude-worktree")
+        self.assertFalse(runner.no_session_persistence)
 
     def test_create_runner_returns_codex_runner(self):
         runner = create_runner("codex_cli", DummyConfig())
@@ -56,7 +58,41 @@ class ClaudeCliRunnerTest(unittest.TestCase):
         self.assertEqual(output, "done")
         run_process.assert_called_once_with(
             [
-                "claude",
+                "/usr/bin/claude",
+                "-p",
+                "your task",
+                "--settings",
+                "/tmp/settings.json",
+                "--permission-mode",
+                "bypassPermissions",
+                "--dangerously-skip-permissions",
+                "--add-dir",
+                "/tmp/claude-worktree",
+            ],
+            cwd="/tmp/claude-worktree",
+        )
+
+    def test_run_adds_no_session_persistence_when_enabled(self):
+        runner = ClaudeCliRunner(
+            executable="claude",
+            settings_path="/tmp/settings.json",
+            workdir="/tmp/claude-worktree",
+            no_session_persistence=True,
+        )
+
+        with mock.patch("gateway.runners.claude_cli.shutil.which", return_value="/usr/bin/claude"):
+            with mock.patch("gateway.runners.claude_cli.os.path.isfile", return_value=True):
+                with mock.patch("gateway.runners.claude_cli.os.path.isdir", return_value=True):
+                    with mock.patch(
+                        "gateway.runners.claude_cli.run_process",
+                        return_value=(0, "done\n"),
+                    ) as run_process:
+                        output = runner.run("your task")
+
+        self.assertEqual(output, "done")
+        run_process.assert_called_once_with(
+            [
+                "/usr/bin/claude",
                 "-p",
                 "your task",
                 "--settings",
@@ -106,7 +142,7 @@ class CodexCliRunnerTest(unittest.TestCase):
         self.assertEqual(output, "done")
         run_process.assert_called_once_with(
             [
-                "codex",
+                "/usr/bin/codex",
                 "exec",
                 "--dangerously-bypass-approvals-and-sandbox",
                 "--ephemeral",
@@ -144,7 +180,7 @@ class CodexCliRunnerTest(unittest.TestCase):
         self.assertEqual(output, "done")
         run_process.assert_called_once_with(
             [
-                "codex",
+                "/usr/bin/codex",
                 "exec",
                 "--dangerously-bypass-approvals-and-sandbox",
                 "--ephemeral",

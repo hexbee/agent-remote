@@ -1,6 +1,7 @@
 import io
 import unittest
 
+from gateway.compat import ApiError
 from gateway.core import GatewayApplication
 from gateway.models import ApiResponse, IncomingMessage, SendResult, WebhookInfo
 
@@ -12,6 +13,7 @@ class DummyConfig(object):
     claude_pending_message = "[CLAUDE CODE] Processing your request..."
     codex_pending_message = "[CODEX CLI] Processing your request..."
     telegram_max_message_length = 3500
+    watch_poll_timeout = 10
 
 
 class FakeRunner(object):
@@ -97,6 +99,36 @@ class GatewayApplicationTest(unittest.TestCase):
         self.assertEqual(channel.sent, [("2000", "pong")])
         self.assertEqual(runner.prompts, [])
         self.assertIn("-> alice (2000) [heartbeat]: pong", stdout.getvalue())
+
+    def test_codex_reply_handler_short_circuits_heartbeat(self):
+        stdout = io.StringIO()
+        channel = FakeChannel()
+        claude_runner = FakeRunner("unused")
+        codex_runner = FakeRunner("unused")
+        app = GatewayApplication(
+            DummyConfig(),
+            channel,
+            claude_runner,
+            codex_runner=codex_runner,
+            stdout=stdout,
+        )
+        message = IncomingMessage(
+            update_id=6,
+            chat_id="2003",
+            sender="erin",
+            text="  PING  ",
+            is_bot=False,
+            timestamp=0,
+            raw={},
+            has_text_message=True,
+        )
+
+        app._codex_reply_handler(message)
+
+        self.assertEqual(channel.sent, [("2003", "pong")])
+        self.assertEqual(codex_runner.prompts, [])
+        self.assertEqual(claude_runner.prompts, [])
+        self.assertIn("-> erin (2003) [heartbeat]: pong", stdout.getvalue())
 
     def test_claude_reply_handler_sends_placeholder_then_runner_output(self):
         stdout = io.StringIO()
@@ -288,6 +320,52 @@ class GatewayApplicationTest(unittest.TestCase):
             stdout.getvalue(),
         )
         self.assertIn("Failed to complete Claude reply 5: send failed for final reply", stderr.getvalue())
+
+    def test_watch_loop_exits_on_get_updates_conflict(self):
+        stderr = io.StringIO()
+        channel = FakeChannel()
+        runner = FakeRunner("unused")
+        sleeper_calls = []
+
+        def raise_conflict(timeout, offset=None):
+            raise ApiError(
+                '{"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}'
+            )
+
+        channel.get_updates = raise_conflict
+        app = GatewayApplication(
+            DummyConfig(),
+            channel,
+            runner,
+            stderr=stderr,
+            sleeper=lambda seconds: sleeper_calls.append(seconds),
+        )
+
+        app.watch_codex_reply()
+
+        self.assertEqual(channel.deleted, 1)
+        self.assertEqual(sleeper_calls, [])
+        self.assertIn(
+            "Telegram getUpdates conflict: another gateway instance is already polling this bot token.",
+            stderr.getvalue(),
+        )
+
+    def test_watch_reply_uses_configured_poll_timeout(self):
+        channel = FakeChannel()
+        runner = FakeRunner("unused")
+        app = GatewayApplication(DummyConfig(), channel, runner)
+        observed = []
+
+        def interrupting_get_updates(timeout, offset=None):
+            observed.append((timeout, offset))
+            raise KeyboardInterrupt()
+
+        channel.get_updates = interrupting_get_updates
+
+        with self.assertRaises(KeyboardInterrupt):
+            app.watch_reply()
+
+        self.assertEqual(observed, [(10, None)])
 
 
 if __name__ == "__main__":

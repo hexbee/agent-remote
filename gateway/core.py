@@ -1,7 +1,7 @@
 import sys
 import time
 
-from gateway.compat import CommandError
+from gateway.compat import ApiError, CommandError
 from gateway.formatting import (
     extract_next_offset,
     format_outgoing_log,
@@ -63,20 +63,18 @@ class GatewayApplication(object):
         self._watch_loop(initial_offset=None, reply_handler=None)
 
     def watch_new(self):
-        self._watch_loop(initial_offset=self._get_next_offset(), reply_handler=None)
+        self._watch_from_latest(reply_handler=None)
 
     def watch_reply(self):
         self._watch_loop(initial_offset=None, reply_handler=self._basic_reply_handler)
 
     def watch_claude_reply(self):
-        self._watch_loop(
-            initial_offset=self._get_next_offset(),
+        self._watch_from_latest(
             reply_handler=self._claude_reply_handler,
         )
 
     def watch_codex_reply(self):
-        self._watch_loop(
-            initial_offset=self._get_next_offset(),
+        self._watch_from_latest(
             reply_handler=self._codex_reply_handler,
         )
 
@@ -96,7 +94,10 @@ class GatewayApplication(object):
 
         while True:
             try:
-                response = self.channel.get_updates(timeout=30, offset=offset)
+                response = self.channel.get_updates(
+                    timeout=self.config.watch_poll_timeout,
+                    offset=offset,
+                )
                 self._write_updates(response)
                 offset, batch_error = self._consume_response(
                     response,
@@ -109,8 +110,22 @@ class GatewayApplication(object):
             except KeyboardInterrupt:
                 raise
             except Exception as error:
+                if self._is_get_updates_conflict(error):
+                    self._write_error(self._format_get_updates_conflict())
+                    return
                 self._write_error(str(error))
                 self.sleeper(1)
+
+    def _watch_from_latest(self, reply_handler):
+        try:
+            initial_offset = self._get_next_offset()
+        except Exception as error:
+            if self._is_get_updates_conflict(error):
+                self._write_error(self._format_get_updates_conflict())
+                return
+            raise
+
+        self._watch_loop(initial_offset=initial_offset, reply_handler=reply_handler)
 
     def _consume_response(self, response, offset, reply_handler):
         next_offset = self._next_offset_after_response(response, offset)
@@ -231,6 +246,18 @@ class GatewayApplication(object):
         if isinstance(message.update_id, int):
             return "{} {}: {}".format(prefix, message.update_id, error)
         return "{}: {}".format(prefix, error)
+
+    def _is_get_updates_conflict(self, error):
+        return isinstance(error, ApiError) and (
+            "Conflict: terminated by other getUpdates request" in str(error)
+        )
+
+    def _format_get_updates_conflict(self):
+        return (
+            "Telegram getUpdates conflict: another gateway instance is already "
+            "polling this bot token. Stop the other watch or receive process "
+            "and retry."
+        )
 
     def _log_sent_message(self, chat_id, sender, kind, text):
         if self.config.raw_output:

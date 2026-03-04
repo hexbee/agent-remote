@@ -22,11 +22,13 @@ class AppConfig(object):
         "claude_executable",
         "claude_settings_path",
         "claude_workdir",
+        "claude_no_session_persistence",
         "codex_executable",
         "codex_model",
         "codex_reasoning_effort",
         "codex_workdir",
         "telegram_max_message_length",
+        "watch_poll_timeout",
         "claude_pending_message",
         "codex_pending_message",
         "heartbeat_keyword",
@@ -44,11 +46,13 @@ class AppConfig(object):
         claude_executable,
         claude_settings_path,
         claude_workdir,
+        claude_no_session_persistence,
         codex_executable,
         codex_model,
         codex_reasoning_effort,
         codex_workdir,
         telegram_max_message_length,
+        watch_poll_timeout,
         claude_pending_message,
         codex_pending_message,
         heartbeat_keyword,
@@ -63,11 +67,13 @@ class AppConfig(object):
         self.claude_executable = claude_executable
         self.claude_settings_path = claude_settings_path
         self.claude_workdir = claude_workdir
+        self.claude_no_session_persistence = claude_no_session_persistence
         self.codex_executable = codex_executable
         self.codex_model = codex_model
         self.codex_reasoning_effort = codex_reasoning_effort
         self.codex_workdir = codex_workdir
         self.telegram_max_message_length = telegram_max_message_length
+        self.watch_poll_timeout = watch_poll_timeout
         self.claude_pending_message = claude_pending_message
         self.codex_pending_message = codex_pending_message
         self.heartbeat_keyword = heartbeat_keyword
@@ -114,6 +120,13 @@ class AppConfig(object):
             "TELEGRAM_MAX_MESSAGE_LENGTH",
             3500,
         )
+        watch_poll_timeout = _parse_int_env(
+            merged_environment,
+            "WATCH_POLL_TIMEOUT",
+            10,
+        )
+        if watch_poll_timeout < 1:
+            raise ConfigError("Invalid WATCH_POLL_TIMEOUT: {}".format(watch_poll_timeout))
 
         return cls(
             root_dir=root_dir,
@@ -124,6 +137,11 @@ class AppConfig(object):
             claude_executable=merged_environment.get("CLAUDE_EXECUTABLE", "claude"),
             claude_settings_path=claude_settings_path,
             claude_workdir=claude_workdir,
+            claude_no_session_persistence=_parse_bool_env(
+                merged_environment,
+                "CLAUDE_NO_SESSION_PERSISTENCE",
+                False,
+            ),
             codex_executable=merged_environment.get("CODEX_EXECUTABLE", "codex"),
             codex_model=merged_environment.get("CODEX_MODEL", "gpt-5.3-codex"),
             codex_reasoning_effort=merged_environment.get(
@@ -132,6 +150,7 @@ class AppConfig(object):
             ),
             codex_workdir=codex_workdir,
             telegram_max_message_length=telegram_max_message_length,
+            watch_poll_timeout=watch_poll_timeout,
             claude_pending_message=merged_environment.get(
                 "CLAUDE_PENDING_MESSAGE",
                 "[CLAUDE CODE] Processing your request...",
@@ -314,3 +333,17 @@ def _parse_dir_env(environment, key, default):
     if not os.path.isabs(resolved):
         resolved = os.path.join(default, resolved)
     return os.path.abspath(resolved)
+
+
+def _parse_bool_env(environment, key, default):
+    raw_value = environment.get(key, "")
+    if raw_value == "":
+        return default
+
+    normalized = str(raw_value).strip().lower()
+    if normalized in ("1", "true", "yes", "on"):
+        return True
+    if normalized in ("0", "false", "no", "off"):
+        return False
+
+    raise ConfigError("Invalid {}: {}".format(key, raw_value))
